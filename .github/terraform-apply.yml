@@ -1,0 +1,80 @@
+name: "Terraform Apply"
+
+on:
+    push:
+        branches:
+           
+
+jobs:
+    terraform:
+        name: "Terraform Apply"
+        runs-on: ubuntu-latest
+        steps:
+
+            - uses: hashicorp/setup-terraform@v1
+              with:
+                  terraform_version: "1.1.7"
+            
+            - name: Checkout
+              uses: actions/checkout@v3
+
+            - name: Create AWS Config and Credentials files
+              run: |
+                mkdir -p ~/.aws
+                # Write to the AWS config file
+                cat <<EOF > ~/.aws/config
+                [profile default]
+                region = us-east-1
+      
+                [profile demo-test]
+                region = us-east-1
+                EOF
+      
+                # Write to the AWS credentials file
+                cat <<EOF > ~/.aws/credentials
+                [default]
+                aws_access_key_id = "${{ secrets.AWS_ACCESS_KEY_ID_DEFAULT }}"
+                aws_secret_access_key = "${{ secrets.AWS_SECRET_KEY_ID_DEFAULT }}"
+      
+                [demo-test]
+                aws_access_key_id = "${{ secrets.AWS_ACCESS_KEY_ID_DEMO }}"
+                aws_secret_access_key = "${{ secrets.AWS_SECRET_KEY_ID_DEMO }}"
+                EOF
+      
+                # Verify the files
+                echo "=== AWS Config ==="
+                cat ~/.aws/config
+      
+                echo "=== AWS Credentials ==="
+                cat ~/.aws/credentials
+         
+            
+            - name: Terraform Init
+              run: |
+                    
+                    terraform init 
+            - name: Terraform Plan
+              run: |
+                
+                terraform plan -no-color -input=false
+
+            - id: apply
+              name: Terraform Apply
+              run: |
+                
+                terraform apply -auto-approve -no-color -input=false
+            
+            - name: Update README with Workflow Status
+              run: |
+                STATUS_BADGE="![Terraform Apply Status](https://github.com/${{ github.repository }}/actions/workflows/terraform-apply.yml/badge.svg)"
+                echo "$STATUS_BADGE" >> README.md
+                echo "Status badge appended to README.md."
+
+            - name: Commit Changes
+              run: |
+                  git config --global user.name "github-actions[bot]"
+                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
+                  git add README.md
+                  git commit -m "Update workflow status in README.md"
+                  git push
+            
