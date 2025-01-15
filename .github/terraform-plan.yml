@@ -1,0 +1,116 @@
+name: "Terraform Plan"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  terraform:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.1.7"
+
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Create AWS Config and Credentials files
+        run: |
+          mkdir -p ~/.aws
+          # Write to the AWS config file
+          cat <<EOF > ~/.aws/config
+          [profile default]
+          region = us-east-1
+
+          [profile test-demo]
+          region = us-east-1
+          EOF
+
+          # Write to the AWS credentials file
+          cat <<EOF > ~/.aws/credentials
+          [default]
+          aws_access_key_id = "${{ secrets.AWS_ACCESS_KEY_ID_DEFAULT }}"
+          aws_secret_access_key = "${{ secrets.AWS_SECRET_KEY_ID_DEFAULT }}"
+
+          [test-demo]
+          aws_access_key_id = "${{ secrets.AWS_ACCESS_KEY_ID_QAS }}"
+          aws_secret_access_key = "${{ secrets.AWS_SECRET_KEY_ID_QAS }}"
+          EOF
+
+          # Verify the files
+          echo "=== AWS Config ==="
+          cat ~/.aws/config
+
+          echo "=== AWS Credentials ==="
+          cat ~/.aws/credentials
+
+      - name: Config Validate
+        run: |
+          echo "Hello,${{ secrets.AWS_ACCESS_KEY_ID_DEFAULT }}"
+          cat ~/.aws/config
+          cat ~/.aws/credentials
+
+      - name: Terraform Installaton Validate
+        run: |
+          terraform --version
+      
+      - id: fmt
+        name: Terraform Format
+        run: |
+          
+          terraform fmt -check
+      
+      - id: init 
+        name: Terraform Init
+        run: |
+         
+          terraform init
+
+      - id: validate
+        name: Terraform Validate
+        run: |
+          
+          terraform validate -no-color
+
+      - id: plan
+        name: Terraform Plan
+        run: |
+          
+          terraform plan -no-color -input=false
+        continue-on-error: true
+
+      - name: Update Pull Request 
+        uses: actions/github-script@v6
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          github-token: ${{ secrets.TOKEN_GITHUB }}
+          script: |
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform\n
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
